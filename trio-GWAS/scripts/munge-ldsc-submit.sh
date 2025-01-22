@@ -1,42 +1,20 @@
 #!/bin/bash
-#
-# Job name (this is what the cluster will show as running - keep short):
 #SBATCH --job-name=trio_gwas
-#Project:
 #SBATCH --account=p471
-#Wall clock limit (change based on resources required):
 #SBATCH --time=2:00:00 
-# Output filename customization
-# This specification is Jobname_User_JobID
 #SBATCH --output=./output/%x_%u_%j.out
 #SBATCH --error=./error/trio_gwas_submission.txt
 #SBATCH --ntasks=1
-# Max memory usage (change based on resources required):
 #SBATCH --mem-per-cpu=8G
-#Number of CPUs per task. 
 #SBATCH --cpus-per-task=1
 
 # Activate the conda environment for LDSC
-source /cluster/projects/p471/ldsc-activation
+source /cluster/projects/ldsc-activation
 
 # Set the working directory
-cd /tsd/p471/cluster/projects/trio_gwas
+cd /cluster/projects/trio_gwas
 
-# Munge data
-
-#munge_sumstats.py \
-#--out height_pop_munged \
-#--merge-alleles eur_w_ld_chr/w_hm3.snplist \
-#--N 21261 \
-#--chunksize 500000 \
-#--sumstats moba-qc-rg/height_pop_ldsc.txt
-
-#munge_sumstats.py \
-#--out height_con_munged \
-#--merge-alleles eur_w_ld_chr/w_hm3.snplist \
-#--N 21261 \
-#--chunksize 500000 \
-#--sumstats moba-qc-rg/height_con_ldsc.txt
+# Munge data (previously published gwas)
 
 munge_sumstats.py \
 --out lockebmi \
