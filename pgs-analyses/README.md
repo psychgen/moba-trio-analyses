@@ -1,9 +1,8 @@
-pgs-analyses
-================
 
-This is the readme file for the PGS analyses component. Scripts
-contained within this component are as follows:
+# Contents
 
-1.  01_data_prep (which customises elements of the universal data prep)
-2.  02.1-4_ptdt\_\* (which run the ptdt analyses)
-3.  03_trioPGS (which runs the trio PGS analyses)
+- `scripts`
+  - `01_data_prep.R`: (which customises elements of the universal data prep)
+  - `02.1-4_ptdt_*.R`: (which run the ptdt analyses)
+  - `03_trioPGS.R` (which runs the trio PGS analyses)
+- `README.md`: this file

@@ -1,6 +1,5 @@
 # Contents
 
 - `scripts`
-  - `create_plots.R`: R script to create plots for the paper
-  - `plot_utils.R`: R script with utility functions for plotting
+  - `*_*_figure.R`: R scripts to create plots for the paper
 - `README.md`: this file
