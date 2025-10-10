@@ -65,23 +65,23 @@ end
 
 
 # Load data
-sz = "107088"
-gfile = "MoBaPsychGen_v1_filter_info_0.95" * "_" * sz
+sz = "105210"
+gfile = "MoBaPsychGen_v1_filter_info_0.95v2" * "_" * sz
 mobadat = DataFrame(CSV.File(gfile * ".moba", missingstring="NA"))
-pcdat = DataFrame(CSV.File("/ess/p471/cluster/data/genetic_data/MoBaPsychGen_v1/MoBaPsychGen_v1-ec-eur-batch-basic-qc-cov-noMoBaIDs.txt", missingstring="NA"))
-A = read_grm("grm107088")
+pcdat = DataFrame(CSV.File("/ess/p471/data/durable/data/genetic/MoBaPsychGen_v1/MoBaPsychGen_v1-ec-eur-batch-basic-qc-cov-noMoBaIDs.txt", missingstring="NA"))
+A = read_grm("grm105210")
 
 mobadat.order = 1:size(mobadat, 1)
 mobadat = leftjoin(mobadat, pcdat, on = [:iid => :IID])
 sort!(mobadat, :order)
-# Subset grm blocks, after possibly filtering high relatedness coefficients
+# Subset grm blocks, after filtering high relatedness coefficients
 # --------------------------------------
 # This is fast
 A = Symmetric(A, :U)
 
-m_inds = 1:35696
-f_inds = 35697:71392
-c_inds = 71393:107088
+m_inds = 1:35070
+f_inds = 35071:70140
+c_inds = 70141:105210
 
 # Check pos
 ii = 14000
@@ -98,6 +98,8 @@ println(A[trio_inds_sel_i, trio_inds_sel_i])
 mobadat[!, :sex] .= string.(mobadat[!, :sex])
 mobadat[!, :Age_height] .= string.(mobadat[!, :Age_height])
 mobadat[!, :Age_exam] .= string.(mobadat[!, :Age_exam])
+mobadat[!, :Age_dep] .= string.(mobadat[!, :Age_dep])
+mobadat[!, :Age_sleep] .= string.(mobadat[!, :Age_sleep])
 mobadat[!, :genotyping_batch_num] .= string.(mobadat[!, :genotyping_batch_num])
 
 
@@ -114,7 +116,6 @@ c_inds_sel_nomiss = c_inds_sel[pos_use]
 m_pc = Matrix(pcdat[m_inds_sel_nomiss, Symbol.(:PC, 1:20)])
 f_pc = Matrix(pcdat[f_inds_sel_nomiss, Symbol.(:PC, 1:20)])
 mf_pc = m_pc + f_pc
-    #y = convert.(Float64, mobadat[c_inds_sel_nomiss, vari])
 mf = ModelFrame(term(Symbol(vari)) ~ ConstantTerm(1) + term(:genotyping_batch_num) + term(:sex), mobadat[c_inds_sel_nomiss, :])
 X = ModelMatrix(mf).m
 X = hcat(X, mf_pc)
@@ -137,16 +138,16 @@ rs = findGRMs(A, c_inds_sel_nomiss, m_inds_sel_nomiss, f_inds_sel_nomiss)
         println("transformation performed")
     end
     dat = VCData(y, X, rs)
-    lbs = [0.0, -Inf, -Inf, 0.0, -Inf, 0.0, 0.0] # not sure what this does - does it need to be changed if focal individual changes?
+    lbs = [0.0, -Inf, -Inf, 0.0, -Inf, 0.0, 0.0] 
     vd = var(y)
-    
-    ini = sqrt.(vd .* [0.1, 0.0, 0.0, 0.1, 0.0, 0.1, 0.7]) #are these starting params? changed since child is focal ind. 
+   
+    ini = sqrt.(vd .* [0.1, 0.1, 0.3, 0.0, 0.0, 0.0, 0.5]) 
     @time mod = VCModel(dat, ini, lbs, false)
     mod.opt.ftol_abs = 0
     mod.opt.ftol_rel = 0 
-    @time VCModels.fit!(mod)
+   @time VCModels.fit!(mod)
     hessian!(mod.opt.H, mod)
-    JLD.save("results/" * vari * "_full_filter_update_$(size(mobadat, 1)).jld", "model", mod)
+    JLD.save("results/" * vari * "_full_filter_update3_$(size(mobadat, 1)).jld", "model", mod)
 
 # No covariances
 # -------------------------------------------
@@ -158,13 +159,13 @@ rs = findGRMs(A, c_inds_sel_nomiss, m_inds_sel_nomiss, f_inds_sel_nomiss)
         println("transformation performed")
     end
     dat = VCData(y, X, [rs[1], rs[2], rs[3], rs[7]])
-    lbs = [-Inf, -Inf, 0.0, 0.0] #wasn't sure about this #could be 0
+    lbs = [-Inf, -Inf, 0.0, 0.0] 
     vd = var(y)
     ini = sqrt.(vd .* [0.0, 0.0, 0.3, 0.7])
     @time mod = VCModel(dat, ini, lbs, false)
     @time VCModels.fit!(mod)
     hessian!(mod.opt.H, mod)
-    JLD.save("results/" * vari * "_nocov_filter_update_$(size(mobadat, 1)).jld", "model", mod)
+    JLD.save("results/" * vari * "_nocov_filter_update3_$(size(mobadat, 1)).jld", "model", mod)
 
 # direct effects only
 function VCModels.transform!(δ::Vector, θ::Vector)
@@ -179,7 +180,7 @@ ini = sqrt.(vd .* [0.10, 0.9^2])
 @time mod = VCModel(dat, ini, lbs, false)
 @time fit!(mod)
 hessian!(mod.opt.H, mod)
-JLD.save("results/" * vari * "_direct_filter_update_$(size(mobadat, 1)).jld", "model", mod)
+JLD.save("results/" * vari * "_direct_filter_update3_$(size(mobadat, 1)).jld", "model", mod)
 
 
 #Null model 
@@ -194,4 +195,4 @@ ini = sqrt.(vd .* [1.0])
 @time mod = VCModel(dat, ini, lbs, false)
 @time fit!(mod)
 hessian!(mod.opt.H, mod)
-JLD.save("results/" * vari * "_null_filter_update_$(size(mobadat, 1)).jld", "model", mod)
+JLD.save("results/" * vari * "_null_filter_update3_$(size(mobadat, 1)).jld", "model", mod)

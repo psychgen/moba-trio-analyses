@@ -9,7 +9,7 @@ library(patchwork)
 load("./data/dat_final.RData")
 
 
-run_trioPGS <- function(out, covs, scores, data){
+run_trioPGS <- function(out, covs, scores, data, clust){
   
   
   all_res=tibble()
@@ -23,22 +23,22 @@ run_trioPGS <- function(out, covs, scores, data){
     basemod = paste0(out, " ~ ",chscore, " + ", paste0(covs,collapse = " + ") )
     
     basefit= lavaan::sem(basemod, 
-                     data=data, 
-                     estimator="MLR",
-                     se="robust",
-                     cluster="m_id")
-
+                         data=data, 
+                         estimator="MLR",
+                         se="robust",
+                         cluster=clust)
+    
     baseline_est <- standardizedsolution(basefit, type="std.nox") %>% 
-        filter (op == "~" ) %>% 
+      filter (op == "~" ) %>% 
       mutate(Type="Child-only")
     
     triomod = paste0(out, " ~ ",chscore, " + ", mscore, " + ", fscore, " + ", paste0(covs,collapse = " + "))
-      
+    
     triofit= lavaan::sem(triomod, 
                          data=data, 
                          estimator="MLR",
                          se="robust",
-                         cluster="m_id") 
+                         cluster=clust) 
     
     trio_ests <- standardizedsolution(triofit, type="std.nox") %>% 
       filter (op == "~" ) %>% 
@@ -56,197 +56,136 @@ run_trioPGS <- function(out, covs, scores, data){
   
 } 
 
-pgs_names <- c("height2",
-               "bmi2",
-               "ea3",
-               "smoke2" )
 
-pgs_display <- c("Height","BMI", "Edu. attain.", "Ever smoked")
+
+pgs_names <- c("height2018",
+               "bmi2018",
+               "EA2018",
+               "smok2019",
+               "mdd2025")
+
+pgs_display <- c("Height","BMI", "Edu. attain.", "Ever smoked", "MDD")
+
 
 
 trio_ex = run_trioPGS(out="exam", 
-                      covs="SEX", #Age excluded for exam analyses because of zero variance
-                      scores=paste0(pgs_names, "_0.95_pgs_res"), 
-                      data=dat_final)
-
+                      covs=c("SEX"), #Age excluded for exam analyses because of zero variance
+                      scores=paste0(pgs_names, "_pgs_res"), 
+                      data=dat_final,
+                      clust="m_id")
+trio_ht = run_trioPGS(out="height", 
+                      covs=c("SEX","Age_height"), #Age excluded for exam analyses because of zero variance
+                      scores=paste0(pgs_names, "_pgs_res"), 
+                      data=dat_final,
+                      clust="m_id")
+trio_dp = run_trioPGS(out="smfq_dep", 
+                      covs=c("SEX","Age_dep"), #Age excluded for exam analyses because of zero variance
+                      scores=paste0(pgs_names, "_pgs_res"), 
+                      data=dat_final,
+                      clust="m_id")
+trio_sl = run_trioPGS(out="sleep_hrs", 
+                      covs=c("SEX","Age_sleep"), #Age excluded for exam analyses because of zero variance
+                      scores=paste0(pgs_names, "_pgs_res"), 
+                      data=dat_final,
+                      clust="m_id")
 # Do some post-processing of results
 
-trio_res_ex = trio_ex %>% 
+trio_res = trio_ex %>% 
+  bind_rows(trio_ht) |> 
+  bind_rows(trio_dp) |> 
+  bind_rows(trio_sl) |> 
   separate(rhs, into = c("Member", "PGS"), sep="_") %>% 
   mutate(PGS = factor(str_remove_all(PGS,"_0.95_pgs_res"), levels= pgs_names, labels = pgs_display )) %>% 
-  select(Type, Member,PGS,est.std,se,pvalue,ci.lower,ci.upper) %>%
+  select('Outcome'=lhs,Type, Member,PGS,est.std,se,pvalue,ci.lower,ci.upper) %>%
   drop_na(PGS)
 
 # Save out
 
-save(trio_res_ex, file = "./output/triopgs_edu.RData")
-         
+save(trio_res, file = "./output/triopgs_res.RData")
 
-# Plot attenuation of child only estimates
+# Sensitivity analyses
 
-p2<- ggplot(trio_res_ex %>% 
-              filter(Member=="child"), aes(x=est.std,y=fct_rev(Type),fill=Type,colour=Type, shape=Type)) +
-  geom_vline(xintercept=0, linetype=2, colour="grey80", size=1.2)+  
-  geom_errorbarh(aes(xmin=ci.lower,xmax=ci.upper),position=position_dodge(0.8), size=0.6, height=0) +
-  geom_point(size=3, position=position_dodge(0.8),  colour= "black", stroke=0.6)+
-  scale_shape_manual(values = c(22,23))+
-  scale_colour_brewer(type=seq, palette = "Paired", direction=-1)+
-  scale_fill_brewer( palette = "Paired", direction=-1)+
-  theme(text = element_text(size=12),
-        axis.title.y = element_text(margin =  margin(t = 0, r = 20, b = 0, l = 0)),
-        axis.title.x = element_text(margin =  margin(t = 20, r = 0, b = 0, l = 0)),
-        axis.text.y  = element_blank(),
-        axis.ticks.y  = element_blank(),
-        panel.background = element_rect(fill = "white", colour = "grey10"),
-        panel.spacing = unit(0.2, "lines"),
-        panel.grid.major = element_line(colour="grey90"),
-        panel.grid.minor = element_line(colour="grey90"),
-        strip.text.y.left =   element_text(size=12, face="bold", colour="white", angle=0),
-        legend.title = element_text(size =12),
-        legend.position = "bottom",
-        legend.direction = "horizontal",
-        strip.background = element_rect(fill="grey10")) +
-  facet_grid(PGS~., scales = "free_y", switch= "y")+
-  scale_x_continuous("Standardised effect of PGS on exam scores" )+
-  coord_cartesian(xlim= c(-0.2, 0.3))+
-  scale_y_discrete("PGS trait")
+#1) unrelated trios only
 
-p2
+library(genotools)
+ref = unrelate() |> 
+  filter(Role=="Child")
 
-ggsave("./output/plots/fig2.tiff", device="tiff", width=14,height=9,units="cm",dpi=320,bg="white")
+dat_unrelated = ref |> 
+  ungroup()|> 
+  select(preg_id, BARN_NR) |> 
+  mutate(BARN_NR= as.double(BARN_NR)) |> 
+  left_join(dat_final)
 
-# Plot effect of parental PGS
-
-trio_res_ex =  trio_res_ex %>% 
-  mutate(Member = case_when(Member=="mother"~"Mother",
-                            Member=="father"~"Father",
-                            TRUE~"child"))
-
-p3<- ggplot(trio_res_ex %>% 
-              filter(Member!="child"), aes(x=est.std,y=fct_rev(Member),fill=Member, colour=Member)) +
-  geom_vline(xintercept=0, linetype=2, colour="grey80", size=1.2)+  
-  geom_errorbarh(aes(xmin=ci.lower,xmax=ci.upper),position=position_dodge(0.8), size=0.6, height=0) +
-  geom_point(size=3, position=position_dodge(0.8), shape= 21, colour= "black", stroke=0.6)+
-  scale_colour_brewer(type=seq, palette = "Accent", direction=-1)+
-  scale_fill_brewer( palette = "Accent", direction=-1)+
-  theme(text = element_text(size=12),
-        axis.title.y = element_text(margin =  margin(t = 0, r = 20, b = 0, l = 0)),
-        axis.title.x = element_text(margin =  margin(t = 20, r = 0, b = 0, l = 0)),
-        axis.text.y  = element_blank(),
-        axis.ticks.y  = element_blank(),
-        panel.background = element_rect(fill = "white", colour = "grey10"),
-        panel.spacing = unit(0.2, "lines"),
-        panel.grid.major = element_line(colour="grey90"),
-        panel.grid.minor = element_line(colour="grey90"),
-        strip.text.y.left =   element_blank(),
-        legend.title = element_text(size =12),
-       # legend.position = "bottom",
-      #  legend.direction = "horizontal",
-        strip.background = element_blank()) +
-  facet_grid(PGS~., scales = "free_y", switch= "y")+
-  scale_x_continuous("Standardised effect of PGS on exam scores" )+
-  coord_cartesian(xlim= c(-0.2, 0.3))+
-  scale_y_discrete("PGS trait")
-p3
-
-ggsave("./output/plots/fig3.tiff", device="tiff", width=14,height=9,units="cm",dpi=320,bg="white")
-
-
-save(p2,p3, file= "./scratch/pgsplots.RData")
-
-
-# Complete & plot the trioPGS for height also
-
-
-trioh = run_trioPGS(out="height", 
-                    covs=c("SEX","Age_height"),
-                    scores=paste0(pgs_names, "_0.95_pgs_res"),
-                    data=dat_final)
-
+trio_ex = run_trioPGS(out="exam", 
+                      covs=c("SEX"), #Age excluded for exam analyses because of zero variance
+                      scores=paste0(pgs_names, "_pgs_res"), 
+                      data=dat_unrelated,
+                      clust=NULL)
+trio_ht = run_trioPGS(out="height", 
+                      covs=c("SEX","Age_height"), #Age excluded for exam analyses because of zero variance
+                      scores=paste0(pgs_names, "_pgs_res"), 
+                      data=dat_unrelated,
+                      clust=NULL)
+trio_dp = run_trioPGS(out="smfq_dep", 
+                      covs=c("SEX","Age_dep"), #Age excluded for exam analyses because of zero variance
+                      scores=paste0(pgs_names, "_pgs_res"), 
+                      data=dat_unrelated,
+                      clust=NULL)
+trio_sl = run_trioPGS(out="sleep_hrs", 
+                      covs=c("SEX","Age_sleep"), #Age excluded for exam analyses because of zero variance
+                      scores=paste0(pgs_names, "_pgs_res"), 
+                      data=dat_unrelated,
+                      clust=NULL)
 # Do some post-processing of results
 
-trio_res_ht = trioh %>% 
+trio_res = trio_ex %>% 
+  bind_rows(trio_ht) |> 
+  bind_rows(trio_dp) |> 
+  bind_rows(trio_sl) |> 
   separate(rhs, into = c("Member", "PGS"), sep="_") %>% 
   mutate(PGS = factor(str_remove_all(PGS,"_0.95_pgs_res"), levels= pgs_names, labels = pgs_display )) %>% 
-  select(Type, Member,PGS,est.std,se,pvalue,ci.lower,ci.upper)%>%
+  select('Outcome'=lhs,Type, Member,PGS,est.std,se,pvalue,ci.lower,ci.upper) %>%
   drop_na(PGS)
 
 # Save out
 
-save(trio_res_ht, file = "./output/triopgs_hei.RData")
+save(trio_res, file = "./output/triopgs_res_unrelated.RData")
 
+#2) cluster on family id
 
-# Plot attenuation of child only estimates
+trio_ex = run_trioPGS(out="exam", 
+                      covs=c("SEX"), #Age excluded for exam analyses because of zero variance
+                      scores=paste0(pgs_names, "_pgs_res"), 
+                      data=dat_final,
+                      clust="FID")
+trio_ht = run_trioPGS(out="height", 
+                      covs=c("SEX","Age_height"), #Age excluded for exam analyses because of zero variance
+                      scores=paste0(pgs_names, "_pgs_res"), 
+                      data=dat_final,
+                      clust="FID")
+trio_dp = run_trioPGS(out="smfq_dep", 
+                      covs=c("SEX","Age_dep"), #Age excluded for exam analyses because of zero variance
+                      scores=paste0(pgs_names, "_pgs_res"), 
+                      data=dat_final,
+                      clust="FID")
+trio_sl = run_trioPGS(out="sleep_hrs", 
+                      covs=c("SEX","Age_sleep"), #Age excluded for exam analyses because of zero variance
+                      scores=paste0(pgs_names, "_pgs_res"), 
+                      data=dat_final,
+                      clust="FID")
 
-p5<- ggplot(trio_res_ht %>% 
-              filter(Member=="child"), aes(x=est.std,y=fct_rev(Type),fill=Type,colour=Type, shape=Type)) +
-  geom_vline(xintercept=0, linetype=2, colour="grey80", size=1.2)+  
-  geom_errorbarh(aes(xmin=ci.lower,xmax=ci.upper),position=position_dodge(0.8), size=0.6, height=0) +
-  geom_point(size=3, position=position_dodge(0.8),  colour= "black", stroke=0.6)+
-  scale_shape_manual(values = c(22,23))+
-  scale_colour_brewer(type=seq, palette = "Paired", direction=-1)+
-  scale_fill_brewer( palette = "Paired", direction=-1)+
-  theme(text = element_text(size=12),
-        axis.title.y = element_text(margin =  margin(t = 0, r = 20, b = 0, l = 0)),
-        axis.title.x = element_text(margin =  margin(t = 20, r = 0, b = 0, l = 0)),
-        axis.text.y  = element_blank(),
-        axis.ticks.y  = element_blank(),
-        panel.background = element_rect(fill = "white", colour = "grey10"),
-        panel.spacing = unit(0.2, "lines"),
-        panel.grid.major = element_line(colour="grey90"),
-        panel.grid.minor = element_line(colour="grey90"),
-        strip.text.y.left =   element_text(size=12, face="bold", colour="white", angle=0),
-        legend.title = element_text(size =12),
-        legend.position = "bottom",
-        legend.direction = "horizontal",
-        strip.background = element_rect(fill="grey10")) +
-  facet_grid(PGS~., scales = "free_y", switch= "y")+
-  scale_x_continuous("Standardised effect of PGS on height" )+
-  coord_cartesian(xlim= c(-0.2, 0.4))+
-  scale_y_discrete("PGS trait")
+# Do some post-processing of results
 
-p5
+trio_res = trio_ex %>% 
+  bind_rows(trio_ht) |> 
+  bind_rows(trio_dp) |> 
+  bind_rows(trio_sl) |> 
+  separate(rhs, into = c("Member", "PGS"), sep="_") %>% 
+  mutate(PGS = factor(str_remove_all(PGS,"_0.95_pgs_res"), levels= pgs_names, labels = pgs_display )) %>% 
+  select('Outcome'=lhs,Type, Member,PGS,est.std,se,pvalue,ci.lower,ci.upper) %>%
+  drop_na(PGS)
 
-ggsave("./output/plots/fig5.tiff", device="tiff", width=14,height=9,units="cm",dpi=320,bg="white")
+# Save out
 
-# Plot effect of parental PGS
-
-trio_res_ht = trio_res_ht %>% 
-  mutate(Member = case_when(Member=="mother"~"Mother",
-                            Member=="father"~"Father",
-                            TRUE~"child"))
-
-p6<- ggplot(trio_res_ht %>% 
-              filter(Member!="child"), aes(x=est.std,y=fct_rev(Member),fill=Member, colour=Member)) +
-  geom_vline(xintercept=0, linetype=2, colour="grey80", size=1.2)+  
-  geom_errorbarh(aes(xmin=ci.lower,xmax=ci.upper),position=position_dodge(0.8), size=0.6, height=0) +
-  geom_point(size=3, position=position_dodge(0.8), shape= 21, colour= "black", stroke=0.6)+
-  scale_colour_brewer(type=seq, palette = "Accent", direction=-1)+
-  scale_fill_brewer( palette = "Accent", direction=-1)+
-  theme(text = element_text(size=12),
-        axis.title.y = element_text(margin =  margin(t = 0, r = 20, b = 0, l = 0)),
-        axis.title.x = element_text(margin =  margin(t = 20, r = 0, b = 0, l = 0)),
-        axis.text.y  = element_blank(),
-        axis.ticks.y  = element_blank(),
-        panel.background = element_rect(fill = "white", colour = "grey10"),
-        panel.spacing = unit(0.2, "lines"),
-        panel.grid.major = element_line(colour="grey90"),
-        panel.grid.minor = element_line(colour="grey90"),
-        strip.text.y.left =   element_blank(),
-        legend.title = element_text(size =12),
-        # legend.position = "bottom",
-        #  legend.direction = "horizontal",
-        strip.background = element_blank()) +
-  facet_grid(PGS~., scales = "free_y", switch= "y")+
-  scale_x_continuous("Standardised effect of PGS on height" )+
-  coord_cartesian(xlim= c(-0.2, 0.4))+
-  scale_y_discrete("PGS trait")
-p6
-
-ggsave("./output/plots/fig6.tiff", device="tiff", width=14,height=9,units="cm",dpi=320,bg="white")
-
-
-p5 + p6 + plot_layout(axis_titles = "collect" )
-
-save(p5,p6, file= "./scratch/pgs_supp_plots.RData")
-
+save(trio_res, file = "./output/triopgs_res_altclust.RData")

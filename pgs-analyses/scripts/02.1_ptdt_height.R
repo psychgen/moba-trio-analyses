@@ -1,9 +1,8 @@
 # 02_ptdt_heightex.R
 
-# In this script we select trios on the basis of "extreme" educational performance among children, 
-# dropping those with "extremely" well-educated parents , attaching siblings as comparators,
-# and running a ptdt analysis
-
+# In this script we select trios on the basis of "extreme" height among children, 
+# dropping those with "extremely" tall parents, attaching siblings as comparators,
+# and run a ptdt analysis
 
 library(tidyverse)
 
@@ -13,20 +12,18 @@ set.seed(15246)
 
 load("./data/dat_final.RData")
 
-# Filter to select the ptdt sample for the education analysis
-# Here, in contrast to the height example which uses 2SD to identify extreme values,
-# we opt to use the 90th %ile because the distribution is more compressed 
+# Filter to select the ptdt sample for the height analysis
 
 dat_ptdt <- dat_final %>% 
-  filter(!is.na(exam),
+  filter(!is.na(height),
          if_all(matches("pgs_res"), ~!is.na(.))) %>% 
   group_by(m_id) %>%
-  slice_sample(n=1)%>% 
+  slice_sample(n=1)%>%
   rowwise() %>% 
-  mutate(pedu = mean(c(mother_eduyears,father_eduyears))) %>% 
+  mutate(pheight = mean(c(mheight,fheight))) %>% 
   ungroup() %>% 
-  mutate(ext_ch = ifelse(exam> (quantile(exam, na.rm=T, 0.9)), "Yes","No" ),
-         ext_p = ifelse(pedu> (quantile(pedu, na.rm=T, 0.9)), "Yes","No" )) %>% 
+  mutate(ext_ch = ifelse(height> (mean(height,na.rm=T)+2*sd(height,na.rm=T)), "Yes","No" ),
+         ext_p = ifelse(pheight> (mean(pheight,na.rm=T)+2*sd(pheight,na.rm=T)), "Yes","No" )) %>% 
   filter(ext_ch=="Yes",
          ext_p=="No")
 
@@ -71,7 +68,7 @@ make_ptd <- function(scores, data){
       ungroup() %>% 
       mutate(ptd.sc=ptd.unsc/sd(mp.pgs))
     
-    tmpdat[[str_remove_all(paste0("ptd_",score), "_0.95_pgs_res")]] <- tmpdat$ptd.sc
+    tmpdat[[str_remove_all(paste0("ptd_",score), "_pgs_res")]] <- tmpdat$ptd.sc
     
     tmpdat2 <- data %>% 
       drop_na(.data[[siscore]],.data[[mscore]],.data[[fscore]]) %>% 
@@ -81,7 +78,7 @@ make_ptd <- function(scores, data){
       ungroup() %>% 
       mutate(ptd.sib=ptd.unsc/sd(tmpdat$mp.pgs))
     
-    tmpdat2[[str_remove_all(paste0("ptd.sib_",score), "_0.95_pgs_res")]] <- tmpdat2$ptd.sib
+    tmpdat2[[str_remove_all(paste0("ptd.sib_",score), "_pgs_res")]] <- tmpdat2$ptd.sib
     
     alldat = alldat %>% 
       left_join(tmpdat %>% 
@@ -99,21 +96,22 @@ make_ptd <- function(scores, data){
 # Apply the function 
 
 ptdat = dat_ptdt %>% 
-  left_join(make_ptd(paste0(pgs_names,"_0.95_pgs_res"),dat_ptdt))
+  left_join(make_ptd(paste0(pgs_names,"_pgs_res"),dat_ptdt))
 
 
 # Get the results, with formatted PGS names
 
 
-pgs_names <- c("height2",
-               "bmi2",
-               "ea3",
-               "smoke2" )
+pgs_names <- c("height2018",
+               "bmi2018",
+               "EA2018",
+               "smok2019",
+               "mdd2025")
 
-pgs_display <- c("Height","BMI", "Edu. attain.", "Ever smoked")
+pgs_display <- c("Height","BMI", "Edu. attain.", "Ever smoked", "MDD")
 
 
-# Small function to get means for each ptd column
+# Small function to get means for each ptd column, adjusted for age and sex
 
 lem <- function(x){ 
   tmp <- lm(x~1+SEX+scale(Age_height), data= ptdat)
@@ -129,7 +127,7 @@ ptdres <- ptdat%>%
          p=value$p.value,
          fdrp = p.adjust(p, method="fdr"),
          ptd_pheno = factor(ptd_pheno,levels=paste0("ptd_",pgs_names), labels=pgs_display),
-         Group = ">90th percentile\nexam performance") %>% 
+         Group = "+2SDs height") %>% 
   bind_rows(ptdat%>%  
               summarise(across(matches("ptd.sib_"),.fns= list(reg= lem), .names = "{.col}")) %>% 
               pivot_longer(cols=everything(), names_to = "ptd_pheno") %>% 
@@ -138,16 +136,17 @@ ptdres <- ptdat%>%
                      p=value$p.value,
                      fdrp = p.adjust(p, method="fdr"),
                      ptd_pheno = factor(ptd_pheno,levels=paste0("ptd.sib_",pgs_names), labels=pgs_display),
-                     Group= "Siblings")) %>% 
+                     Group= "Siblings"))  %>% 
   filter(value=="(Intercept)")
+  
 
 # Save out the plotting dataset
 
-save(ptdres, file = "./output/ptd_edu.RData")
+save(ptdres, file = "./output/ptd_height.RData")
 
 # Create a standard format plot for the ptd results
 
-p1edu<- ggplot(ptdres, aes(x=Group,y=mean,fill=Group,colour=Group)) +
+p1<- ggplot(ptdres, aes(x=Group,y=mean,fill=Group,colour=Group)) +
   geom_hline(yintercept=0, linetype=2, colour="grey80", size=1.2)+  
   geom_errorbar(aes(ymin=mean-1.96*se,ymax=mean+1.96*se),position=position_dodge(0.8), linewidth=0.6, width=0) +
   geom_point(size=3, position=position_dodge(0.8), shape= 21, colour= "black", stroke=0.6)+
@@ -167,13 +166,13 @@ p1edu<- ggplot(ptdres, aes(x=Group,y=mean,fill=Group,colour=Group)) +
         strip.background = element_rect(fill="grey10")) +
   facet_grid(.~ptd_pheno, scales = "free_x")+
   scale_y_continuous("Relative over-/under-transmission\n of alleles (mid-parent PGS SDs)")+
-  scale_x_discrete("PGS trait and group (probands ascertained\n for >90th percentile exam performance\n vs. their siblings)")
+  scale_x_discrete("PGS trait and group (probands ascertained\n for extreme height vs. their siblings)")
 
-p1edu
+p1
 
 # Save the pdt plot, both as a Tiff and an RData file
 
-ggsave("./output/plots/fig1_edu.tiff", device="tiff", width=28,height=9,units="cm",dpi=320,bg="white")
+ggsave("./output/plots/fig1.tiff", device="tiff", width=28,height=9,units="cm",dpi=320,bg="white")
 
-save(p1edu, file="./scratch/ptdt_plot_edu.RData")
+save(p1, file="./scratch/ptdt_plot.RData")
 

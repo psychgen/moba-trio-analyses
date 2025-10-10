@@ -1,5 +1,5 @@
 #author: Espen Eilertsen, Laura Hegemann 
-#filter GRM on relatedness and fit full, no covariance, direct only, and null models for height phenotype
+#filter GRM on relatedness and fit full, no covariance, direct only, and null models for sleep phenotype
 
 
 using VCModels
@@ -7,10 +7,8 @@ using SnpArrays, DataFrames, CSV, LinearAlgebra
 using StatsBase, StatsModels
 using JLD, HDF5
 
-println("packges loaded")
-
 cd("/ess/p471/data/durable/people/Laura_H/Cluster_backup/trio_gcta_qc/")
-
+#cd("Z:/projects/trio_gcta_qc")
 
 function vec2ugrm(v::AbstractVector{T}) where {T <: AbstractFloat}
     k = length(v) # unique elements / triangle + diagonal
@@ -65,14 +63,12 @@ function sel_trio(A, m_inds, f_inds, c_inds)
 end
 
 
-println("loading data")
+
 # Load data
 sz = "105210"
 gfile = "MoBaPsychGen_v1_filter_info_0.95v2" * "_" * sz
 mobadat = DataFrame(CSV.File(gfile * ".moba", missingstring="NA"))
 pcdat = DataFrame(CSV.File("/ess/p471/data/durable/data/genetic/MoBaPsychGen_v1/MoBaPsychGen_v1-ec-eur-batch-basic-qc-cov-noMoBaIDs.txt", missingstring="NA"))
-println("reading GRM")
-
 A = read_grm("grm105210")
 
 mobadat.order = 1:size(mobadat, 1)
@@ -100,14 +96,14 @@ println(A[trio_inds_sel_i, trio_inds_sel_i])
 # Fit models
 # --------------------------------------
 mobadat[!, :sex] .= string.(mobadat[!, :sex])
-mobadat[!, :Age_height] .= float.(mobadat[!, :Age_height])
+mobadat[!, :Age_height] .= string.(mobadat[!, :Age_height])
 mobadat[!, :Age_exam] .= string.(mobadat[!, :Age_exam])
 mobadat[!, :Age_dep] .= string.(mobadat[!, :Age_dep])
-mobadat[!, :Age_sleep] .= string.(mobadat[!, :Age_sleep])
+mobadat[!, :Age_sleep] .= float.(mobadat[!, :Age_sleep])
 mobadat[!, :genotyping_batch_num] .= string.(mobadat[!, :genotyping_batch_num])
 
 
-vari = "height"
+vari = "sleep_hrs"
 
 pos_use = findall(!ismissing, mobadat[c_inds_sel, vari]) 
 println(length(pos_use))
@@ -121,7 +117,7 @@ m_pc = Matrix(pcdat[m_inds_sel_nomiss, Symbol.(:PC, 1:20)])
 f_pc = Matrix(pcdat[f_inds_sel_nomiss, Symbol.(:PC, 1:20)])
 mf_pc = m_pc + f_pc
     #y = convert.(Float64, mobadat[c_inds_sel_nomiss, vari])
-mf = ModelFrame(term(Symbol(vari)) ~ ConstantTerm(1) + term(:genotyping_batch_num) + term(:sex) + term(:Age_height), mobadat[c_inds_sel_nomiss, :])
+mf = ModelFrame(term(Symbol(vari)) ~ ConstantTerm(1) + term(:genotyping_batch_num) + term(:sex) + term(:Age_sleep), mobadat[c_inds_sel_nomiss, :])
 X = ModelMatrix(mf).m
 X = hcat(X, mf_pc)
 y = response(mf)
@@ -146,7 +142,7 @@ rs = findGRMs(A, c_inds_sel_nomiss, m_inds_sel_nomiss, f_inds_sel_nomiss)
     lbs = [0.0, -Inf, -Inf, 0.0, -Inf, 0.0, 0.0] 
     vd = var(y)
     
-    ini = sqrt.(vd .* [0.1, 0.1, 0.1, 0.1, 0.0, 0.1, 0.7])
+    ini = sqrt.(vd .* [0.1, 0.0, 0.0, 0.1, 0.0, 0.1, 0.7]) 
     @time mod = VCModel(dat, ini, lbs, false)
     mod.opt.ftol_abs = 0
     mod.opt.ftol_rel = 0 
